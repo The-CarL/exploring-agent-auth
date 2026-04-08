@@ -11,7 +11,7 @@ import os
 from dotenv import load_dotenv
 
 # Load .env from the repo root if it exists. Notebooks can be launched from
-# anywhere — find_dotenv walks upward to locate it.
+# anywhere, find_dotenv walks upward to locate it.
 from dotenv import find_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -64,6 +64,6 @@ OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # ----- User passwords (pre-seeded in Keycloak realm) -----
 
 # All three demo users have the same dev password. The plaintext lives in the
-# realm export and here, intentionally — this is a local-only teaching repo.
+# realm export and here, intentionally, this is a local-only teaching repo.
 USER_PASSWORD: str = "password"
-KNOWN_USERS: tuple[str, ...] = ("alice", "bob", "carlo")
+KNOWN_USERS: tuple[str, ...] = ("alice", "bob", "dave")

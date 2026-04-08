@@ -33,7 +33,7 @@ KEYCLOAK_INTERNAL_URL = os.getenv("KEYCLOAK_INTERNAL_URL", "http://keycloak:8080
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "agentauth")
 
 # Issuer that appears in the `iss` claim of tokens minted by Keycloak. This is
-# the URL the *user* sees, not the docker-network address — Keycloak embeds
+# the URL the *user* sees, not the docker-network address, Keycloak embeds
 # whatever frontchannel URL it was reached on into the `iss` claim. Since the
 # notebook hits Keycloak via http://localhost:8080 to get the token, that's
 # what `iss` will be.
@@ -47,7 +47,7 @@ JWKS_URL = f"{KEYCLOAK_INTERNAL_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-con
 
 SHARED_SERVICE_API_KEY = os.getenv("SHARED_SERVICE_API_KEY", "dev-shared-api-key")
 
-# This service's own client_id in Keycloak — used to decide if a JWT is
+# This service's own client_id in Keycloak, used to decide if a JWT is
 # "scoped" (audience matches us) or just a "broad" passthrough JWT.
 SERVICE_CLIENT_ID = os.getenv("SERVICE_CLIENT_ID", "expense-service-client")
 
@@ -122,7 +122,7 @@ def get_identity(request: Request) -> RequestIdentity:
         if api_key == SHARED_SERVICE_API_KEY:
             identity = RequestIdentity(
                 method="api_key",
-                detail="shared service credential — no user identity",
+                detail="shared service credential, no user identity",
             )
         else:
             identity = RequestIdentity(
@@ -138,7 +138,7 @@ def get_identity(request: Request) -> RequestIdentity:
         identity = RequestIdentity(
             method="string_id",
             user_id=user_id_hdr,
-            detail="X-User-Id header — no cryptographic proof, anyone could send this",
+            detail="X-User-Id header, no cryptographic proof, anyone could send this",
         )
         _record(identity)
         return identity
@@ -150,7 +150,7 @@ def get_identity(request: Request) -> RequestIdentity:
 
 
 def _try_parse_jwt(token: str) -> RequestIdentity:
-    """Validate a Bearer token. Never raises — falls back to method=none on
+    """Validate a Bearer token. Never raises, falls back to method=none on
     any failure so the service stays predictable for the demo."""
     try:
         signing_key = _get_jwk_client().get_signing_key_from_jwt(token)
@@ -179,7 +179,7 @@ def _try_parse_jwt(token: str) -> RequestIdentity:
     # "scoped_jwt" means the token was minted for THIS service specifically:
     # the only audience is us. A token that lists multiple audiences (e.g. a
     # broad passthrough user JWT that names every service the agent might
-    # call) is reported as plain "jwt" — that's the pattern 5 vs pattern 6
+    # call) is reported as plain "jwt", that's the pattern 5 vs pattern 6
     # contrast. Pattern 6 narrows the aud via token exchange.
     is_scoped = audiences == [SERVICE_CLIENT_ID]
     method = "scoped_jwt" if is_scoped else "jwt"

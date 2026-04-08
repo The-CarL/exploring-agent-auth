@@ -55,7 +55,7 @@ class Tool:
 
         # Remaining args go into the query string for GET, or merge with
         # extra_params from the strategy. POST endpoints in this repo don't
-        # take a JSON body — approve_expense is path-only.
+        # take a JSON body, approve_expense is path-only.
         query_params = {**args, **prepared.extra_params}
 
         url = self.service_url + path
@@ -67,7 +67,7 @@ class Tool:
         else:
             raise ValueError(f"unsupported http method {method!r}")
 
-        # Don't raise on non-2xx — the LLM benefits from seeing the error body
+        # Don't raise on non-2xx, the LLM benefits from seeing the error body
         # so it can react. Return both status and body.
         try:
             body = r.json()

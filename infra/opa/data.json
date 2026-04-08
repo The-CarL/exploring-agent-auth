@@ -1,12 +1,12 @@
 {
-  "admins": ["carlo"],
+  "admins": ["dave"],
   "relationships": {
     "manages": {
       "bob": ["alice"]
     },
     "members": {
       "engineering": ["alice", "bob"],
-      "platform": ["carlo"]
+      "platform": ["dave"]
     }
   }
 }

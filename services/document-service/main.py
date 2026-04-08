@@ -1,4 +1,4 @@
-"""document-service — auth-flexible FastAPI app for the exploring-agent-auth demo.
+"""document-service, auth-flexible FastAPI app for the exploring-agent-auth demo.
 
 Same auth-flexibility shape as the expense-service. The interesting difference
 is that filtering happens via per-document `access_groups` rather than per-user
@@ -60,7 +60,7 @@ def _all_documents() -> list[dict[str, Any]]:
 
 def _allowed_groups_for(identity: RequestIdentity) -> set[str] | None:
     """Returns the set of access_groups the caller is allowed to read.
-    Returns None to mean 'no filtering — see everything' (used by patterns
+    Returns None to mean 'no filtering, see everything' (used by patterns
     1, 2 where the service has no real identity)."""
 
     # Patterns 1, 2: no identity → no filtering, see everything.
@@ -89,11 +89,11 @@ def _allowed_groups_for(identity: RequestIdentity) -> set[str] | None:
 
 # Tiny lookup table used by the "string_id" path. The pedagogical point is
 # that with a bare X-User-Id the service has to hardcode this kind of mapping
-# locally — there's no claim it can read.
+# locally, there's no claim it can read.
 _USERNAME_TO_GROUPS: dict[str, set[str]] = {
     "alice": {"engineering", "public"},
     "bob": {"engineering", "public"},
-    "carlo": {"platform", "admin", "public"},
+    "dave": {"platform", "admin", "public"},
 }
 
 

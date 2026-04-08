@@ -47,12 +47,12 @@
       "realmRoles": ["default-roles-agentauth"]
     },
     {
-      "username": "carlo",
+      "username": "dave",
       "enabled": true,
       "emailVerified": true,
-      "firstName": "Carlo",
+      "firstName": "Dave",
       "lastName": "Admin",
-      "email": "carlo@agentauth.local",
+      "email": "dave@agentauth.local",
       "credentials": [
         { "type": "password", "value": "password", "temporary": false }
       ],
@@ -228,7 +228,7 @@
     },
     {
       "clientId": "user-direct-client",
-      "name": "User-direct client (used by pattern 8 only — 3LO consent flow)",
+      "name": "User-direct client (used by pattern 8 only, 3LO consent flow)",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",

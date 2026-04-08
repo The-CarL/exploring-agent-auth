@@ -1,4 +1,4 @@
-"""Notebook display helpers — pretty-printers built on `rich`.
+"""Notebook display helpers, pretty-printers built on `rich`.
 
 The functions here are what every notebook calls to make output legible:
     run_as(user, prompt, agent)        run an agent and pretty-print the trace
@@ -225,7 +225,7 @@ def three_legged_login(
     query parameter from the redirect URL, and pastes it back into this
     function. The agent never sees the user's password.
 
-    The redirect URI is fake — there's no callback server. The browser will
+    The redirect URI is fake, there's no callback server. The browser will
     show a page-load error after consent; that's expected. The user just
     needs to read the `code=...` query parameter out of the URL bar.
     """
@@ -244,7 +244,7 @@ def three_legged_login(
         Panel(
             Text(
                 "1. Open this URL in your browser (any user from the realm works:\n"
-                "   alice / bob / carlo, password: password):\n\n",
+                "   alice / bob / dave, password: password):\n\n",
                 style="white",
             )
             + Text(auth_url, style="bold cyan")
@@ -258,7 +258,7 @@ def three_legged_login(
                 style="dim",
             )
             + Text(
-                "3. The browser will show a connection-refused page (expected — "
+                "3. The browser will show a connection-refused page (expected, "
                 "there is no callback server).\n",
                 style="white",
             )

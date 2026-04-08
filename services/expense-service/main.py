@@ -1,4 +1,4 @@
-"""expense-service — auth-flexible FastAPI app for the exploring-agent-auth demo.
+"""expense-service, auth-flexible FastAPI app for the exploring-agent-auth demo.
 
 The same endpoint code path serves all eight notebook patterns. The pedagogical
 trick is that the *response content* depends on what identity the service was

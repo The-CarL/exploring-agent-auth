@@ -1,7 +1,7 @@
 """Minimal OpenAI tool-calling agent.
 
 The thinnest loop that demonstrates an LLM choosing tools and acting on the
-results — no framework, no LangChain, no agent SDK. The whole point of this
+results, no framework, no LangChain, no agent SDK. The whole point of this
 file is that it's small enough to read in one screen so the auth pattern,
 not the framework, is the thing readers focus on.
 """
@@ -21,12 +21,12 @@ from shared.tools import Tool
 DEFAULT_SYSTEM_PROMPT = """\
 You are an internal company assistant for the agentauth platform. You help
 users get information about their expenses and search internal documents.
-You have access to tools — use them when the user asks for data. Be concise
+You have access to tools, use them when the user asks for data. Be concise
 in your answers and reflect the actual data the tools return; do not invent
 expenses or documents that you didn't see.
 
 If a tool returns an authorization error, briefly explain to the user what
-happened — don't pretend the call succeeded.
+happened, don't pretend the call succeeded.
 """
 
 
@@ -51,7 +51,7 @@ class Agent:
 
     The strategy is what the eight notebooks vary; everything else stays
     constant. Each notebook constructs an Agent with a different strategy
-    instance and runs the same prompts as alice / bob / carlo.
+    instance and runs the same prompts as alice / bob / dave.
     """
 
     def __init__(
@@ -120,7 +120,7 @@ class Agent:
                             trace_result = {"_status": 0, "error": f"{type(e).__name__}: {e}"}
                             error_msg = str(e)
 
-                # Tool result back to the model — must include tool_call_id.
+                # Tool result back to the model, must include tool_call_id.
                 result_str = json.dumps(trace_result, default=str)
                 messages.append(
                     {

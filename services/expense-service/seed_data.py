@@ -1,9 +1,9 @@
 """SQLite seed data for the expense-service.
 
-The DB lives at /tmp/expenses.db inside the container and is wiped + reseeded
-on every container start. The seed is intentionally small and inspectable so
-the notebook tradeoff cells can show that "alice sees X expenses, bob sees Y,
-carlo sees Z" through real data, not magic filtering.
+The DB lives at /tmp/expenses.db inside the container and gets wiped and
+reseeded on every container start. The seed is small and inspectable so the
+notebook tradeoff cells can show "alice sees X expenses, bob sees Y, dave
+sees Z" through real data, not magic filtering.
 """
 
 import os
@@ -12,7 +12,7 @@ import sqlite3
 DB_PATH = "/tmp/expenses.db"
 
 EXPENSES = [
-    # alice — engineering employee, several approved + one pending
+    # alice: engineering employee, several approved + one pending
     {"id": 1, "user_id": "alice", "department": "engineering", "amount": 42.50,
      "category": "software", "description": "JetBrains AI assistant subscription",
      "status": "approved"},
@@ -24,19 +24,19 @@ EXPENSES = [
      "status": "approved"},
     {"id": 4, "user_id": "alice", "department": "engineering", "amount": 1450.00,
      "category": "hardware", "description": "External 4K monitor",
-     "status": "pending"},  # the one bob will approve in pattern 7
-    # bob — engineering manager
+     "status": "pending"},  # the one bob approves in pattern 7
+    # bob: engineering manager
     {"id": 5, "user_id": "bob", "department": "engineering", "amount": 320.00,
      "category": "training", "description": "OAuth 2.0 deep-dive workshop",
      "status": "approved"},
     {"id": 6, "user_id": "bob", "department": "engineering", "amount": 67.00,
      "category": "meals", "description": "Team lunch after the migration shipped",
      "status": "approved"},
-    # carlo — platform admin
-    {"id": 7, "user_id": "carlo", "department": "platform", "amount": 980.00,
+    # dave: platform admin
+    {"id": 7, "user_id": "dave", "department": "platform", "amount": 980.00,
      "category": "training", "description": "KubeCon ticket",
      "status": "approved"},
-    {"id": 8, "user_id": "carlo", "department": "platform", "amount": 240.00,
+    {"id": 8, "user_id": "dave", "department": "platform", "amount": 240.00,
      "category": "software", "description": "Datadog license seat",
      "status": "approved"},
 ]

@@ -1,15 +1,15 @@
 """SQLite seed data for the document-service.
 
-The DB lives at /tmp/documents.db inside the container and is wiped + reseeded
-on every container start. Documents are tagged with `access_groups` so the
-filtering rules in main.py can show "alice sees engineering docs, carlo sees
-admin-only HR + board materials" through real data.
+The DB lives at /tmp/documents.db inside the container and gets wiped and
+reseeded on every container start. Documents are tagged with `access_groups`
+so the filtering rules in main.py can show "alice sees engineering docs,
+dave sees admin-only HR + board materials" through real data.
 
 Access group convention:
-    engineering   - alice, bob can read
-    platform      - carlo can read
-    admin         - admin role only
-    public        - everyone can read
+    engineering   alice, bob can read
+    platform      dave can read
+    admin         admin role only
+    public        everyone can read
 """
 
 import json
@@ -20,36 +20,36 @@ DB_PATH = "/tmp/documents.db"
 
 DOCUMENTS = [
     # Engineering team docs
-    {"id": 1, "title": "Architecture decision records — Q1",
-     "body": "ADR-014 — moved authentication to Keycloak. ADR-015 — adopted OPA for policy.",
+    {"id": 1, "title": "Architecture decision records, Q1",
+     "body": "ADR-014: moved authentication to Keycloak. ADR-015: adopted OPA for policy.",
      "owner": "bob", "access_groups": ["engineering"]},
-    {"id": 2, "title": "Migration runbook: legacy auth → keycloak",
+    {"id": 2, "title": "Migration runbook: legacy auth to keycloak",
      "body": "Step 1: stand up Keycloak. Step 2: import realm. Step 3: rotate client secrets weekly.",
      "owner": "alice", "access_groups": ["engineering"]},
     {"id": 3, "title": "Engineering onboarding",
-     "body": "Welcome! Read the README, set up your dev env, ping bob in #eng with questions.",
+     "body": "Welcome. Read the README, set up your dev env, ping bob in #eng with questions.",
      "owner": "bob", "access_groups": ["engineering", "public"]},
 
     # Platform team docs
-    {"id": 4, "title": "Production incident postmortem — 2026-03-12",
+    {"id": 4, "title": "Production incident postmortem 2026-03-12",
      "body": "Root cause: stale JWKS cache caused token validation to fail for 18 minutes.",
-     "owner": "carlo", "access_groups": ["platform"]},
+     "owner": "dave", "access_groups": ["platform"]},
     {"id": 5, "title": "On-call rotation rules",
-     "body": "Primary: 7d. Secondary: backup. Escalate to carlo for sev1.",
-     "owner": "carlo", "access_groups": ["platform"]},
+     "body": "Primary: 7d. Secondary: backup. Escalate to dave for sev1.",
+     "owner": "dave", "access_groups": ["platform"]},
 
     # HR / admin only
     {"id": 6, "title": "Compensation bands H1 2026",
      "body": "L3 75-95k, L4 95-130k, L5 130-180k, L6 180-240k. Confidential.",
-     "owner": "carlo", "access_groups": ["admin"]},
+     "owner": "dave", "access_groups": ["admin"]},
     {"id": 7, "title": "Performance review guidelines",
      "body": "Calibration meeting third week of every quarter. Manager submits drafts 2w prior.",
-     "owner": "carlo", "access_groups": ["admin"]},
+     "owner": "dave", "access_groups": ["admin"]},
 
     # Board materials
     {"id": 8, "title": "Board memo: 2026 strategy",
      "body": "Three-pillar strategy: agentic platform, identity infrastructure, developer tools.",
-     "owner": "carlo", "access_groups": ["admin"]},
+     "owner": "dave", "access_groups": ["admin"]},
 ]
 
 

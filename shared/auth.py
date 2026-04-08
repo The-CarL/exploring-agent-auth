@@ -1,4 +1,4 @@
-"""Auth strategy classes — one per pattern.
+"""Auth strategy classes, one per pattern.
 
 The whole point of the eight notebooks is the *progression* between these
 classes. Each strategy implements a single method:
@@ -7,7 +7,7 @@ classes. Each strategy implements a single method:
 
 `tools.py` calls `prepare()` to learn what headers/query-params to attach to
 the outgoing HTTP request. Each strategy is the smallest amount of code that
-demonstrates one identity/authz pattern — they share helpers at the top of
+demonstrates one identity/authz pattern, they share helpers at the top of
 this file (token fetching, JWT decoding) but the strategies themselves stay
 small enough to read in one screen.
 """
@@ -39,7 +39,7 @@ def fetch_user_jwt(username: str, password: str = USER_PASSWORD) -> str:
     """Direct grant: get an access token for a real user via the agent client.
 
     Used by every strategy that needs a real user identity. In production an
-    agent would never have user passwords — it would receive an upstream-issued
+    agent would never have user passwords, it would receive an upstream-issued
     user token via OAuth flows. For this teaching repo, direct grant is the
     simplest way to materialize a user JWT inside a notebook.
     """
@@ -60,7 +60,7 @@ def fetch_user_jwt(username: str, password: str = USER_PASSWORD) -> str:
 
 
 def decode_jwt(token: str) -> dict[str, Any]:
-    """Decode a JWT *without* signature verification — host-side display only.
+    """Decode a JWT *without* signature verification, host-side display only.
 
     Services do real signature verification via PyJWKClient. Notebooks just
     want to read claims for display, so we skip the JWKS fetch dance here.
@@ -77,7 +77,7 @@ def exchange_token(user_jwt: str, target_audience: str) -> str:
     to mint a new token where:
       - sub stays the same (the original user)
       - aud is narrowed to just `target_audience`
-      - azp is set to agent-client (the requester — audit trail)
+      - azp is set to agent-client (the requester, audit trail)
     """
     r = httpx.post(
         TOKEN_ENDPOINT,
@@ -136,7 +136,7 @@ class ServiceCredentialAuth(AuthStrategy):
 
 class InlineClaimAuth(AuthStrategy):
     """Agent fetches the user's JWT, reads claims out of it, and constructs
-    scoped tool calls. The tool still gets only the API key — the *agent* is
+    scoped tool calls. The tool still gets only the API key, the *agent* is
     responsible for narrowing the call.
 
     For get_expenses we add ?department=<dep> when the user has a department
@@ -149,7 +149,7 @@ class InlineClaimAuth(AuthStrategy):
         claims = decode_jwt(fetch_user_jwt(user))
         prepared = PreparedRequest(headers={"X-API-Key": SHARED_SERVICE_API_KEY})
 
-        # Coarse, hand-coded narrowing rules — the kind of thing that grows
+        # Coarse, hand-coded narrowing rules, the kind of thing that grows
         # unmaintainable in real codebases.
         if tool_name == "get_expenses":
             role = claims.get("role")
@@ -160,7 +160,7 @@ class InlineClaimAuth(AuthStrategy):
             elif role == "manager" and department:
                 prepared.extra_params["department"] = department
             elif username:
-                # employees see only their own — but the service can't filter
+                # employees see only their own, but the service can't filter
                 # by username from an api_key call, so this is a no-op narrowing
                 # in practice. The pattern 2 punchline is exactly this gap.
                 pass
@@ -176,7 +176,7 @@ class AgentSideOPAAuth(AuthStrategy):
     On deny, raise. On allow, fall through to the API-key call.
 
     Centralizes authz in OPA but the agent is still the sole enforcement
-    point — a buggy or prompt-injected agent bypasses everything.
+    point, a buggy or prompt-injected agent bypasses everything.
     """
 
     name = "agent_side_opa"
@@ -243,7 +243,7 @@ class TokenExchangeAuth(AuthStrategy):
     """Standard Token Exchange v2: exchange the broad user JWT for a token
     narrowed to just the target service. azp identifies the agent (audit
     trail). RFC 8693 also defines an `act` claim for delegation; Keycloak's
-    supported v2 doesn't auto-populate it as of 26.x — see notebook 06's
+    supported v2 doesn't auto-populate it as of 26.x, see notebook 06's
     tradeoff cell."""
 
     name = "token_exchange"
@@ -263,7 +263,7 @@ class TokenExchangeAuth(AuthStrategy):
 class ThreeLeggedOAuthAuth(AuthStrategy):
     """Wraps a token previously obtained out-of-band by display.three_legged_login().
 
-    The agent never holds the user's password — the user obtained this token
+    The agent never holds the user's password, the user obtained this token
     by going through the Keycloak consent screen in their own browser. The
     agent just relays it.
     """
