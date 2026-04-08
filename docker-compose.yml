@@ -1,0 +1,76 @@
+name: agentauth
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5
+    container_name: agentauth-keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import
+    networks:
+      - agentauth
+
+  expense-service:
+    build: ./services/expense-service
+    container_name: agentauth-expense-service
+    environment:
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: agentauth
+      KEYCLOAK_EXPECTED_ISSUER: http://localhost:8080/realms/agentauth
+      SHARED_SERVICE_API_KEY: dev-shared-api-key
+      SERVICE_CLIENT_ID: expense-service-client
+      OPA_URL: http://opa:8181
+      # Notebook 07 enables this by exporting TOOL_SIDE_AUTHZ=1 in the host
+      # environment and restarting the expense-service container, which
+      # turns on the OPA tool-side authz hook in main.py.
+      TOOL_SIDE_AUTHZ: "${TOOL_SIDE_AUTHZ:-0}"
+    ports:
+      - "8001:8000"
+    depends_on:
+      - keycloak
+      - opa
+    networks:
+      - agentauth
+
+  document-service:
+    build: ./services/document-service
+    container_name: agentauth-document-service
+    environment:
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: agentauth
+      KEYCLOAK_EXPECTED_ISSUER: http://localhost:8080/realms/agentauth
+      SHARED_SERVICE_API_KEY: dev-shared-api-key
+      SERVICE_CLIENT_ID: document-service-client
+    ports:
+      - "8002:8000"
+    depends_on:
+      - keycloak
+    networks:
+      - agentauth
+
+  opa:
+    image: openpolicyagent/opa:1.15.2
+    container_name: agentauth-opa
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./infra/opa:/policies:ro
+    networks:
+      - agentauth
+
+networks:
+  agentauth:
+    name: agentauth
