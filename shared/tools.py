@@ -1,151 +1,170 @@
-"""Tool definitions for the demo.
+"""Tool definitions for the demo, using the OpenAI Agents SDK.
 
-A `Tool` is a thin wrapper around an HTTP endpoint plus an OpenAI-format
-function schema. The tool's `call()` method asks an `AuthStrategy` to prepare
-the request, then makes the HTTP call. Three tool instances at the bottom:
-get_expenses, approve_expense, search_documents.
+Three `@function_tool`-decorated functions (`get_expenses`, `approve_expense`,
+`search_documents`) and one context dataclass (`AgentAuthContext`) that
+carries the per-run `AuthStrategy` + username through to each tool call.
+
+The pattern is:
+
+    1. shared.agent.Agent.run() builds an AgentAuthContext and passes it to
+       Runner.run_sync() via the context= kwarg.
+    2. The SDK invokes our tools with a RunContextWrapper wrapping that
+       context.
+    3. Each tool function calls strategy.prepare(tool_name, user, args) to
+       learn what headers and extra params to attach, then makes the HTTP call.
+
+That last step is where the auth pattern lives. The rest of the file is
+plumbing.
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from agents import RunContextWrapper, function_tool
 
-from shared.auth import AuthStrategy
+from shared.auth import AuthorizationDenied, AuthStrategy
 from shared.config import DOCUMENT_SERVICE_URL, EXPENSE_SERVICE_URL
 
 
 @dataclass
-class Tool:
-    name: str
-    description: str
-    parameters_schema: dict[str, Any]
-    service_url: str
-    path_template: str  # e.g. "/expenses/{expense_id}/approve"
-    http_method: str = "GET"
+class AgentAuthContext:
+    """Local, per-run context passed to every tool call.
 
-    @property
-    def openai_spec(self) -> dict[str, Any]:
-        """The OpenAI tool-spec dict that goes in `tools=[...]`."""
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters_schema,
-            },
-        }
+    `strategy` determines how outgoing HTTP requests are authenticated.
+    `user` is the username the agent is acting for in this run.
+    """
+    strategy: AuthStrategy
+    user: str
 
-    def call(self, strategy: AuthStrategy, user: str, **args: Any) -> dict[str, Any]:
-        """Invoke the tool. The strategy decides how to attach auth."""
-        # Copy args so the strategy can mutate without affecting the caller.
-        args = dict(args)
-        prepared = strategy.prepare(self.name, user, args)
 
-        # Substitute path template params, e.g. /expenses/{expense_id}/approve.
-        path = self.path_template
-        path_param_names = re.findall(r"\{(\w+)\}", path)
-        for name in path_param_names:
-            if name not in args:
-                raise ValueError(f"tool {self.name!r} requires path param {name!r}")
-            path = path.replace("{" + name + "}", str(args.pop(name)))
+def _call_service(
+    method: str,
+    url: str,
+    ctx: RunContextWrapper[AgentAuthContext],
+    tool_name: str,
+    strategy_args: dict[str, Any],
+    query_args: dict[str, Any] | None = None,
+) -> str:
+    """Shared HTTP helper used by every tool.
 
-        # Remaining args go into the query string for GET, or merge with
-        # extra_params from the strategy. POST endpoints in this repo don't
-        # take a JSON body, approve_expense is path-only.
-        query_params = {**args, **prepared.extra_params}
+    Asks the strategy to prepare the request, makes the call, and returns a
+    JSON-serialized response that the LLM can reason over. Returns an error
+    JSON (rather than raising) on authorization denial and on transport
+    failures, so the LLM can explain the outcome to the user.
+    """
+    strategy = ctx.context.strategy
+    user = ctx.context.user
+    if query_args is None:
+        query_args = dict(strategy_args)
 
-        url = self.service_url + path
-        method = self.http_method.upper()
+    try:
+        prepared = strategy.prepare(tool_name, user, strategy_args)
+    except AuthorizationDenied as e:
+        return json.dumps({
+            "_status": 403,
+            "error": str(e),
+            "_denied_by": "agent_side_opa",
+        })
+
+    params = {**query_args, **prepared.extra_params}
+    try:
         if method == "GET":
-            r = httpx.get(url, headers=prepared.headers, params=query_params, timeout=15.0)
+            r = httpx.get(url, headers=prepared.headers, params=params, timeout=15.0)
         elif method == "POST":
-            r = httpx.post(url, headers=prepared.headers, params=query_params, timeout=15.0)
+            r = httpx.post(url, headers=prepared.headers, params=params, timeout=15.0)
         else:
-            raise ValueError(f"unsupported http method {method!r}")
+            return json.dumps({"_status": 0, "error": f"unsupported method {method}"})
+    except httpx.HTTPError as e:
+        return json.dumps({"_status": 0, "error": f"transport error: {type(e).__name__}: {e}"})
 
-        # Don't raise on non-2xx, the LLM benefits from seeing the error body
-        # so it can react. Return both status and body.
-        try:
-            body = r.json()
-        except Exception:
-            body = {"raw_text": r.text}
-        return {
-            "_status": r.status_code,
-            **body,
-        }
+    try:
+        body = r.json()
+    except ValueError:
+        body = {"raw_text": r.text}
 
-
-# ----- the three demo tools -----
-
-
-get_expenses = Tool(
-    name="get_expenses",
-    description=(
-        "List corporate expenses. Returns expenses scoped to the caller's "
-        "identity (or all of them if the caller is unauthenticated). "
-        "Optionally filter by department."
-    ),
-    parameters_schema={
-        "type": "object",
-        "properties": {
-            "department": {
-                "type": "string",
-                "description": "Optional: only return expenses for this department",
-            },
-        },
-    },
-    service_url=EXPENSE_SERVICE_URL,
-    path_template="/expenses",
-    http_method="GET",
-)
+    body_out: dict[str, Any] = {"_status": r.status_code}
+    if isinstance(body, dict):
+        body_out.update(body)
+    else:
+        body_out["body"] = body
+    return json.dumps(body_out, default=str)
 
 
-approve_expense = Tool(
-    name="approve_expense",
-    description=(
-        "Approve a pending expense. Only managers (for their direct reports) "
-        "and admins can approve expenses."
-    ),
-    parameters_schema={
-        "type": "object",
-        "properties": {
-            "expense_id": {
-                "type": "integer",
-                "description": "ID of the expense to approve",
-            },
-        },
-        "required": ["expense_id"],
-    },
-    service_url=EXPENSE_SERVICE_URL,
-    path_template="/expenses/{expense_id}/approve",
-    http_method="POST",
-)
+@function_tool
+def get_expenses(
+    ctx: RunContextWrapper[AgentAuthContext],
+    department: str | None = None,
+) -> str:
+    """List corporate expenses. Returns expenses scoped to the caller's
+    identity (or all of them if the caller is unauthenticated). Optionally
+    filter by department.
+
+    Args:
+        department: Optional department name. Only expenses from this
+            department will be returned.
+    """
+    args: dict[str, Any] = {}
+    if department:
+        args["department"] = department
+    return _call_service(
+        "GET",
+        f"{EXPENSE_SERVICE_URL}/expenses",
+        ctx,
+        "get_expenses",
+        strategy_args=args,
+    )
 
 
-search_documents = Tool(
-    name="search_documents",
-    description=(
-        "Search internal documents by full-text query. Returns documents the "
-        "caller is allowed to see based on access groups and role."
-    ),
-    parameters_schema={
-        "type": "object",
-        "properties": {
-            "q": {
-                "type": "string",
-                "description": "Search query (matches title and body)",
-            },
-        },
-    },
-    service_url=DOCUMENT_SERVICE_URL,
-    path_template="/documents",
-    http_method="GET",
-)
+@function_tool
+def approve_expense(
+    ctx: RunContextWrapper[AgentAuthContext],
+    expense_id: int,
+) -> str:
+    """Approve a pending expense. Only managers (for their direct reports)
+    and admins can approve expenses.
+
+    Args:
+        expense_id: The numeric ID of the expense to approve.
+    """
+    # expense_id lives in the path; it's passed to the strategy so the
+    # strategy has full context (none of the current strategies use it,
+    # but future ones might) and empty query args are sent on the wire.
+    return _call_service(
+        "POST",
+        f"{EXPENSE_SERVICE_URL}/expenses/{expense_id}/approve",
+        ctx,
+        "approve_expense",
+        strategy_args={"expense_id": expense_id},
+        query_args={},
+    )
 
 
-# Convenience: the canonical tool list every notebook uses.
-ALL_TOOLS: list[Tool] = [get_expenses, approve_expense, search_documents]
+@function_tool
+def search_documents(
+    ctx: RunContextWrapper[AgentAuthContext],
+    q: str | None = None,
+) -> str:
+    """Search internal documents by full-text query. Returns documents the
+    caller is allowed to see based on access groups and role.
+
+    Args:
+        q: Search query that matches against document title and body.
+    """
+    args: dict[str, Any] = {}
+    if q:
+        args["q"] = q
+    return _call_service(
+        "GET",
+        f"{DOCUMENT_SERVICE_URL}/documents",
+        ctx,
+        "search_documents",
+        strategy_args=args,
+    )
+
+
+# Canonical tool list every notebook uses.
+ALL_TOOLS = [get_expenses, approve_expense, search_documents]

@@ -1,9 +1,20 @@
-"""Minimal OpenAI tool-calling agent.
+"""Thin wrapper around the OpenAI Agents SDK.
 
-The thinnest loop that demonstrates an LLM choosing tools and acting on the
-results, no framework, no LangChain, no agent SDK. The whole point of this
-file is that it's small enough to read in one screen so the auth pattern,
-not the framework, is the thing readers focus on.
+The underlying framework does the loop: it calls the LLM, executes tool
+calls, feeds results back, and terminates when the model produces a final
+answer. This file adds only two things on top:
+
+    1. A convenience class (Agent) that pairs an SDK agent with an
+       AuthStrategy, so notebook code can say
+           agent = Agent(strategy=ServiceCredentialAuth(), tools=ALL_TOOLS)
+       and then reuse the same object across three run_as() calls.
+    2. An AgentResult shape with flat ToolCallTrace entries that
+       shared.display.run_as() knows how to render.
+
+The auth strategy is threaded through to each tool call via the SDK's
+local-context mechanism (RunContextWrapper). Tools in shared.tools read
+the strategy + user from the context and call strategy.prepare() before
+making HTTP requests.
 """
 
 from __future__ import annotations
@@ -12,21 +23,22 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from openai import OpenAI
+from agents import Agent as SDKAgent, Runner
+from agents.items import ToolCallItem, ToolCallOutputItem
 
-from shared.auth import AuthorizationDenied, AuthStrategy
+from shared.auth import AuthStrategy
 from shared.config import OPENAI_MODEL
-from shared.tools import Tool
+from shared.tools import ALL_TOOLS, AgentAuthContext
 
-DEFAULT_SYSTEM_PROMPT = """\
+DEFAULT_INSTRUCTIONS = """\
 You are an internal company assistant for the agentauth platform. You help
 users get information about their expenses and search internal documents.
-You have access to tools, use them when the user asks for data. Be concise
-in your answers and reflect the actual data the tools return; do not invent
-expenses or documents that you didn't see.
+You have access to tools; use them when the user asks for data. Be concise
+in your answers and reflect the actual data the tools return. Do not
+invent expenses or documents that you didn't see.
 
-If a tool returns an authorization error, briefly explain to the user what
-happened, don't pretend the call succeeded.
+If a tool returns an authorization error, briefly explain to the user
+what happened. Don't pretend the call succeeded.
 """
 
 
@@ -43,105 +55,130 @@ class ToolCallTrace:
 class AgentResult:
     content: str
     tool_calls: list[ToolCallTrace] = field(default_factory=list)
-    iterations: int = 0
 
 
 class Agent:
-    """A tool-calling agent that uses a single AuthStrategy for every call.
+    """Pairs an SDK Agent with an AuthStrategy, for notebook convenience.
 
-    The strategy is what the eight notebooks vary; everything else stays
-    constant. Each notebook constructs an Agent with a different strategy
-    instance and runs the same prompts as alice / bob / dave.
+    The SDK Agent itself is reusable across runs; we only create it once
+    per Agent() instantiation. Each call to .run() builds a fresh
+    AgentAuthContext carrying (strategy, user) and hands it to
+    Runner.run_sync() via the context= kwarg.
     """
 
     def __init__(
         self,
         strategy: AuthStrategy,
-        tools: list[Tool],
-        system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        tools: list | None = None,
+        instructions: str = DEFAULT_INSTRUCTIONS,
         model: str = OPENAI_MODEL,
     ):
-        self.client = OpenAI()  # reads OPENAI_API_KEY from env
         self.strategy = strategy
-        self.tools = {t.name: t for t in tools}
-        self.tool_specs = [t.openai_spec for t in tools]
-        self.system_prompt = system_prompt
-        self.model = model
-
-    def run(self, user: str, prompt: str, max_iterations: int = 5) -> AgentResult:
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": prompt},
-        ]
-        traces: list[ToolCallTrace] = []
-
-        for iteration in range(1, max_iterations + 1):
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=self.tool_specs,
-            )
-            message = response.choices[0].message
-
-            if not message.tool_calls:
-                return AgentResult(
-                    content=message.content or "",
-                    tool_calls=traces,
-                    iterations=iteration,
-                )
-
-            # Append the assistant message (with tool_calls) to history.
-            messages.append(message.model_dump(exclude_none=True))
-
-            # Execute every tool call the model requested.
-            for tc in message.tool_calls:
-                if tc.type != "function":
-                    continue
-                tool = self.tools.get(tc.function.name)
-                if tool is None:
-                    trace_result = {"error": f"unknown tool: {tc.function.name}"}
-                    error_msg = trace_result["error"]
-                else:
-                    try:
-                        args = json.loads(tc.function.arguments or "{}")
-                    except json.JSONDecodeError as e:
-                        args = {}
-                        trace_result = {"error": f"bad json args: {e}"}
-                        error_msg = trace_result["error"]
-                    else:
-                        try:
-                            trace_result = tool.call(self.strategy, user, **args)
-                            error_msg = None
-                        except AuthorizationDenied as e:
-                            # The strategy refused the call (pattern 3 demo).
-                            trace_result = {"_status": 403, "error": str(e), "_denied_by": "agent_side_opa"}
-                            error_msg = str(e)
-                        except Exception as e:
-                            trace_result = {"_status": 0, "error": f"{type(e).__name__}: {e}"}
-                            error_msg = str(e)
-
-                # Tool result back to the model, must include tool_call_id.
-                result_str = json.dumps(trace_result, default=str)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result_str,
-                    }
-                )
-                traces.append(
-                    ToolCallTrace(
-                        name=tc.function.name,
-                        args=json.loads(tc.function.arguments or "{}"),
-                        status=trace_result.get("_status") if isinstance(trace_result, dict) else None,
-                        result_summary=result_str[:300],
-                        error=error_msg,
-                    )
-                )
-
-        # Hit max_iterations without a final assistant message.
-        return AgentResult(
-            content="(agent exceeded max iterations without producing a final answer)",
-            tool_calls=traces,
-            iterations=max_iterations,
+        self._sdk_agent = SDKAgent[AgentAuthContext](
+            name="agentauth-assistant",
+            instructions=instructions,
+            model=model,
+            tools=tools if tools is not None else ALL_TOOLS,
         )
+
+    def run(self, user: str, prompt: str, max_turns: int = 6) -> AgentResult:
+        context = AgentAuthContext(strategy=self.strategy, user=user)
+        sdk_result = Runner.run_sync(
+            self._sdk_agent,
+            input=prompt,
+            context=context,
+            max_turns=max_turns,
+        )
+        return AgentResult(
+            content=sdk_result.final_output or "",
+            tool_calls=_extract_traces(sdk_result),
+        )
+
+
+def _extract_traces(sdk_result: Any) -> list[ToolCallTrace]:
+    """Walk sdk_result.new_items and pull out (name, args, status, summary)
+    for every tool invocation the run produced.
+
+    The SDK emits ToolCallItem (the request) and ToolCallOutputItem (the
+    response) as separate items. We match them by call_id where possible
+    and build one flat ToolCallTrace per request.
+    """
+    traces: list[ToolCallTrace] = []
+    by_call_id: dict[str, ToolCallTrace] = {}
+
+    for item in sdk_result.new_items:
+        if isinstance(item, ToolCallItem):
+            name, args_dict, call_id = _parse_tool_call(item)
+            trace = ToolCallTrace(
+                name=name,
+                args=args_dict,
+                status=None,
+                result_summary="(pending)",
+            )
+            traces.append(trace)
+            if call_id:
+                by_call_id[call_id] = trace
+        elif isinstance(item, ToolCallOutputItem):
+            call_id = _call_id_of(item.raw_item)
+            target = by_call_id.get(call_id) if call_id else (traces[-1] if traces else None)
+            if target is None:
+                continue
+            output = item.output
+            if not isinstance(output, str):
+                output = str(output)
+            status, error = _parse_output_status(output)
+            target.status = status
+            target.result_summary = output[:300]
+            target.error = error
+
+    return traces
+
+
+def _parse_tool_call(item: ToolCallItem) -> tuple[str, dict[str, Any], str | None]:
+    raw = item.raw_item
+    name = _attr_or_key(raw, "name") or "unknown"
+    args_raw = _attr_or_key(raw, "arguments")
+    if isinstance(args_raw, str):
+        try:
+            args_dict = json.loads(args_raw) if args_raw else {}
+        except json.JSONDecodeError:
+            args_dict = {"_raw": args_raw}
+    elif isinstance(args_raw, dict):
+        args_dict = args_raw
+    else:
+        args_dict = {}
+    return name, args_dict, _call_id_of(raw)
+
+
+def _call_id_of(raw: Any) -> str | None:
+    for key in ("call_id", "id", "tool_call_id"):
+        v = _attr_or_key(raw, key)
+        if v:
+            return v
+    return None
+
+
+def _attr_or_key(obj: Any, key: str) -> Any:
+    if obj is None:
+        return None
+    if hasattr(obj, key):
+        return getattr(obj, key)
+    if isinstance(obj, dict):
+        return obj.get(key)
+    return None
+
+
+def _parse_output_status(output: str) -> tuple[int | None, str | None]:
+    try:
+        parsed = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return None, None
+    if not isinstance(parsed, dict):
+        return None, None
+    status = parsed.get("_status")
+    if not isinstance(status, int):
+        status = None
+    error = parsed.get("error")
+    if error is not None and not isinstance(error, str):
+        error = str(error)
+    return status, error
