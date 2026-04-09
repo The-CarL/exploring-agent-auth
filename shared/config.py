@@ -58,7 +58,7 @@ SHARED_SERVICE_API_KEY: str = os.getenv("SHARED_SERVICE_API_KEY", "dev-shared-ap
 # ----- OpenAI (used by shared/agent.py) -----
 
 OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
 # ----- User passwords (pre-seeded in Keycloak realm) -----
