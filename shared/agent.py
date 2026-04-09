@@ -19,9 +19,11 @@ making HTTP requests.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Coroutine
 
 from agents import Agent as SDKAgent, Runner
 from agents.items import ToolCallItem, ToolCallOutputItem
@@ -62,8 +64,9 @@ class Agent:
 
     The SDK Agent itself is reusable across runs; we only create it once
     per Agent() instantiation. Each call to .run() builds a fresh
-    AgentAuthContext carrying (strategy, user) and hands it to
-    Runner.run_sync() via the context= kwarg.
+    AgentAuthContext carrying (strategy, user) and hands it to the SDK
+    via the context= kwarg. See _run_coroutine() for the async dispatch
+    trick that lets this work inside a Jupyter kernel.
     """
 
     def __init__(
@@ -83,16 +86,50 @@ class Agent:
 
     def run(self, user: str, prompt: str, max_turns: int = 6) -> AgentResult:
         context = AgentAuthContext(strategy=self.strategy, user=user)
-        sdk_result = Runner.run_sync(
-            self._sdk_agent,
-            input=prompt,
-            context=context,
-            max_turns=max_turns,
+        sdk_result = _run_coroutine(
+            Runner.run(
+                self._sdk_agent,
+                input=prompt,
+                context=context,
+                max_turns=max_turns,
+            )
         )
         return AgentResult(
             content=sdk_result.final_output or "",
             tool_calls=_extract_traces(sdk_result),
         )
+
+
+def _run_coroutine(coro: Coroutine[Any, Any, Any]) -> Any:
+    """Run an async coroutine from sync code, regardless of whether the
+    calling thread already has a running event loop.
+
+    Jupyter kernels run inside an event loop, so Runner.run_sync()
+    (which calls asyncio.run() internally) raises RuntimeError when
+    called from a notebook cell. To keep a simple synchronous Agent.run()
+    API in notebooks, we detect a running loop and dispatch the coroutine
+    to a worker thread with its own fresh loop. Outside of Jupyter there
+    is no running loop and we just call asyncio.run() directly.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+
+    def _target() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as e:
+            result["error"] = e
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    t.join()
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
 
 
 def _extract_traces(sdk_result: Any) -> list[ToolCallTrace]:
