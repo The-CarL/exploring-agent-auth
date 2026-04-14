@@ -17,44 +17,6 @@ services:
     networks:
       - agentauth
 
-  expense-service:
-    build: ./services/expense-service
-    container_name: agentauth-expense-service
-    environment:
-      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
-      KEYCLOAK_REALM: agentauth
-      KEYCLOAK_EXPECTED_ISSUER: http://localhost:8080/realms/agentauth
-      SHARED_SERVICE_API_KEY: dev-shared-api-key
-      SERVICE_CLIENT_ID: expense-service-client
-      OPA_URL: http://opa:8181
-      # Notebook 07 enables this by exporting TOOL_SIDE_AUTHZ=1 in the host
-      # environment and restarting the expense-service container, which
-      # turns on the OPA tool-side authz hook in main.py.
-      TOOL_SIDE_AUTHZ: "${TOOL_SIDE_AUTHZ:-0}"
-    ports:
-      - "8001:8000"
-    depends_on:
-      - keycloak
-      - opa
-    networks:
-      - agentauth
-
-  document-service:
-    build: ./services/document-service
-    container_name: agentauth-document-service
-    environment:
-      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
-      KEYCLOAK_REALM: agentauth
-      KEYCLOAK_EXPECTED_ISSUER: http://localhost:8080/realms/agentauth
-      SHARED_SERVICE_API_KEY: dev-shared-api-key
-      SERVICE_CLIENT_ID: document-service-client
-    ports:
-      - "8002:8000"
-    depends_on:
-      - keycloak
-    networks:
-      - agentauth
-
   opa:
     image: openpolicyagent/opa:1.15.2
     container_name: agentauth-opa
